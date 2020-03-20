@@ -4,7 +4,6 @@ include("shared.lua")
 include("spawn.lua")
 include("simfunc.lua")
 include("numpads.lua")
-include("damage.lua")
 
 local function EntityLookup(CreatedEntities)
 	return function(id, default)
@@ -16,22 +15,16 @@ local function EntityLookup(CreatedEntities)
 end
 
 function ENT:ApplyDupeInfo(ply, ent, info, GetEntByID)
-	if istable( WireLib ) then
-		WireLib.ApplyDupeInfo(ply, ent, info, GetEntByID)
-	end
+	WireLib.ApplyDupeInfo(ply, ent, info, GetEntByID)
 end
 
 function ENT:PreEntityCopy()
-	if istable( WireLib ) then
-		duplicator.StoreEntityModifier( self, "WireDupeInfo", WireLib.BuildDupeInfo(self) )
-	end
+	duplicator.StoreEntityModifier(self, "WireDupeInfo", WireLib.BuildDupeInfo(self))
 end
 
 function ENT:PostEntityPaste(Player,Ent,CreatedEntities)
-	if istable( WireLib ) then
-		if Ent.EntityMods and Ent.EntityMods.WireDupeInfo then
-			WireLib.ApplyDupeInfo(Player, Ent, Ent.EntityMods.WireDupeInfo, EntityLookup(CreatedEntities))
-		end
+	if Ent.EntityMods and Ent.EntityMods.WireDupeInfo then
+		WireLib.ApplyDupeInfo(Player, Ent, Ent.EntityMods.WireDupeInfo, EntityLookup(CreatedEntities))
 	end
 end
 
@@ -39,12 +32,82 @@ function ENT:OnSpawn()
 end
 
 function ENT:OnTick()
+if(self:WaterLevel() == 3) then
+	if(self:GetCurHealth() <= 30) then
+		DestroyVehicle(self, true)
+		self:GetDriver():Kill()
+	else
+		self:TakeDamage(6, Entity(0), Entity(0) )
+	end
+end
+if(self.gearwhine && self.canupgrade == true) then
+local vmax = ((((self:GetLimitRPM()) * self.Gears[ table.Count( self.Gears ) ] * (self:GetDifferentialGear())) * 3.14 * self.RearWheelRadius * 2) / 52)
+self.gearwhine:ChangeVolume( math.Clamp((self.WheelRPM*6)/vmax,0,0.85)*math.Clamp(self:GetThrottle(),0.4,1) )
+self.gearwhine:ChangePitch( math.Clamp(0.75+((self.WheelRPM*2.5)/vmax),0.75,2.5)*100 )
+self.gearwhine:SetSoundLevel( 75 )
+end
+local inworldcheckleft = {}
+inworldcheckleft.start = self:GetPos()+self:GetUp()*(self:OBBMins().z+8)
+inworldcheckleft.endpos = self:GetPos()+self:GetUp()*8+self:GetRight()*-(self:OBBMaxs().y+8)
+inworldcheckleft.filter = function( ent ) 
+	if ( ent:IsPlayer() ) then 
+		return false 
+	elseif ( ent == self ) then 
+		return false 
+	elseif ( ent:GetClass() == "gmod_sent_vehicle_fphysics_wheel" ) then 
+		return false 
+	else
+		return true
+	end
+end
+local inworldcheckright = {}
+inworldcheckright.start = self:GetPos()+self:GetUp()*(self:OBBMins().z+8)
+inworldcheckright.endpos = self:GetPos()+self:GetUp()*8+self:GetRight()*(self:OBBMaxs().y+8)
+inworldcheckright.filter = function( ent ) 
+	if ( ent:IsPlayer() ) then 
+		return false 
+	elseif ( ent == self ) then 
+		return false 
+	elseif ( ent:GetClass() == "gmod_sent_vehicle_fphysics_wheel" ) then 
+		return false 
+	else
+		return true
+	end
+end
+local inworldcheckup = {}
+inworldcheckup.start = self:GetPos()+self:GetUp()*((self:OBBMins().z+self:OBBMaxs().z)/2)
+inworldcheckup.endpos = self:GetPos()+self:GetUp()*(self:OBBMaxs().z+8)
+inworldcheckup.filter = function( ent ) 
+	if ( ent:IsPlayer() ) then 
+		return false 
+	elseif ( ent == self ) then 
+		return false 
+	elseif ( ent:GetClass() == "gmod_sent_vehicle_fphysics_wheel" ) then 
+		return false 
+	else
+		return true
+	end
+end
+self.traceleft = util.TraceLine( inworldcheckleft )
+self.traceright = util.TraceLine( inworldcheckright )
+self.traceup = util.TraceLine( inworldcheckup )
+if((self.traceleft.Hit or self.traceright.Hit or self.traceup.Hit) && self:GetVelocity():Length() > 150) then
+	if(!self.traceup.Hit) then
+		self:GetPhysicsObject():SetVelocity(Vector(self:GetPhysicsObject():GetVelocity().x/1.00425,self:GetPhysicsObject():GetVelocity().y/1.00425,self:GetPhysicsObject():GetVelocity().z))
+	end
+end
 end
 
 function ENT:OnDelete()
+if(self.MadVehicle) then
+	self:EmitSound("common/null.wav", 85,100,0.4,CHAN_STREAM)
+end
 end
 
 function ENT:OnDestroyed()
+if(self.MadVehicle) then
+	self:EmitSound("common/null.wav", 85,100,0.4,CHAN_STREAM)
+end
 end
 
 function ENT:Think()
@@ -62,10 +125,6 @@ function ENT:Think()
 			
 			local OldDriver = self:GetDriver()
 			if OldDriver ~= Driver then
-				if self:GetIsVehicleLocked() then
-					self:UnLock()
-				end
-
 				self:SetDriver( Driver )
 				
 				local HadDriver = IsValid( OldDriver )
@@ -80,6 +139,8 @@ function ENT:Think()
 					end
 					
 				else
+					self:UnLock()
+					
 					if self.ems then
 						self.ems:Stop()
 					end
@@ -171,8 +232,8 @@ function ENT:createWireIO()
 	--self.Inputs = WireLib.CreateSpecialInputs(self, { "blah" }, { "NORMAL" })
 	
 	self.Outputs = WireLib.CreateSpecialOutputs( self, 
-		{ "Active","Health","RPM","Torque","DriverSeat","PassengerSeats","Driver","Gear","Ratio","Lights Enabled","Highbeams Enabled","Foglights Enabled","Sirens Enabled","Turn Signals Enabled","Remaining Fuel" },
-		{ "NORMAL","NORMAL","NORMAL","NORMAL","ENTITY","ARRAY","ENTITY","NORMAL","NORMAL","NORMAL","NORMAL","NORMAL","NORMAL","NORMAL","NORMAL" }
+		{ "Active","Health","RPM","Torque","DriverSeat","PassengerSeats","Driver","Gear","Ratio","Lights Enabled","Highbeams Enabled","Foglights Enabled","Sirens Enabled" },
+		{ "NORMAL","NORMAL","NORMAL","NORMAL","ENTITY","ARRAY","ENTITY","NORMAL","NORMAL","NORMAL","NORMAL","NORMAL","NORMAL" }
 	)
 end
 
@@ -302,8 +363,6 @@ function ENT:UpdateWireOutputs()
 	WireLib.TriggerOutput(self, "Highbeams Enabled", self:GetLampsEnabled() and 1 or 0 )
 	WireLib.TriggerOutput(self, "Foglights Enabled", self:GetFogLightsEnabled() and 1 or 0 )
 	WireLib.TriggerOutput(self, "Sirens Enabled", self:GetEMSEnabled() and 1 or 0 )
-	WireLib.TriggerOutput(self, "Turn Signals Enabled", self:GetTSEnabled())
-	WireLib.TriggerOutput(self, "Remaining Fuel", self:GetFuel())
 end
 
 function ENT:OnActiveChanged( name, old, new)
@@ -328,19 +387,27 @@ function ENT:OnActiveChanged( name, old, new)
 			self.Turbo = CreateSound(self, self.snd_spool or "simulated_vehicles/turbo_spin.wav")
 			self.Turbo:PlayEx(0,0)
 		end
+		if self.BetterShifting or self.WhineSound then
+			self.gearwhine = CreateSound(self, self.WhineSound or "eziam/raceattack/tranny.wav")
+			self.gearwhine:PlayEx(0,0)
+		end
 		
 		if SuperCharged then
 			self.Blower = CreateSound(self, self.snd_bloweroff or "simulated_vehicles/blower_spin.wav")
-			self.BlowerWhine = CreateSound(self, self.snd_bloweron or "simulated_vehicles/blower_gearwhine.wav")
+			self.BlowerWhine = CreateSound(self, self.snd_bloweron or "pga/blower_whine.wav")
 			
 			self.Blower:PlayEx(0,0)
 			self.BlowerWhine:PlayEx(0,0)
 		end
 	else
+		self:UnLock()
 		self:StopEngine()
 		
 		if TurboCharged then
 			self.Turbo:Stop()
+		end
+		if self.gearwhine then
+			self.gearwhine:Stop()
 		end
 
 		if SuperCharged then
@@ -372,7 +439,7 @@ function ENT:OnThrottleChanged( name, old, new)
 		if Health < MaxHealth * 0.6 then
 			if Active then
 				if math.Round(math.random(0,4),0) == 1 then
-					self:DamagedStall()
+					//self:DamagedStall()
 				end
 			end
 		end
@@ -383,9 +450,11 @@ function ENT:OnThrottleChanged( name, old, new)
 			if (self.SmoothTurbo > 350) then
 				local Volume = math.Clamp( ((self.SmoothTurbo - 300) / 150) ,0, 1) * 0.5
 				self.SmoothTurbo = 0
-				self.BlowOff:Stop()
-				self.BlowOff = CreateSound(self, self.snd_blowoff or "simulated_vehicles/turbo_blowoff.ogg")
-				self.BlowOff:PlayEx(Volume,100)
+				/*self.BlowOff:Stop()
+				self.BlowOff = CreateSound(self, self.snd_blowoff or "simulated_vehicles/turbo_blowoff.ogg")*/
+				self:EmitSound("pga/blowoff"..math.random(1,5)..".ogg", 85, math.random(90,115),0.35,CHAN_STATIC)
+				self:EmitSound("eziam/raceattack/blowoff"..math.random(1,2)..".ogg", 80, math.random(90,115),0.5,CHAN_STATIC)
+				self:EmitSound("pga/blowofflayer.ogg", 80, math.random(90,115),0.6,CHAN_STATIC)
 			end
 		end
 	end
@@ -451,14 +520,6 @@ function ENT:ControlLighting( curtime )
 			end
 		end
 	end
-end
-
-function ENT:SetTSInternal(mode)
-	self.TSMode = mode
-end
-
-function ENT:GetTSEnabled()
-	if self.TSMode != nil then return self.TSMode else return 0 end
 end
 
 function ENT:GetEngineData()
@@ -541,13 +602,13 @@ function ENT:SimulateVehicle( curtime )
 		
 		local cruise = self:GetIsCruiseModeOn()
 		
-		local k_sanic = IsValidDriver and ply:GetInfoNum( "cl_simfphys_sanic", 0 ) or 1
+		local k_sanic = IsValidDriver and 1 or 1
 		local sanicmode = isnumber( k_sanic ) and k_sanic or 0
 		local k_Shift = self.PressedKeys["Shift"]
 		local Shift = (sanicmode == 1) and (k_Shift and 0 or 1) or (k_Shift and 1 or 0)
 		
-		local sportsmode = IsValidDriver and ply:GetInfoNum( "cl_simfphys_sport", 0 ) or 1
-		local k_auto = IsValidDriver and ply:GetInfoNum( "cl_simfphys_auto", 0 ) or 1
+		local sportsmode = IsValidDriver and 1 or 1
+		local k_auto = IsValidDriver and 1 or 1
 		local transmode = (k_auto == 1)
 		
 		local Alt = self.PressedKeys["Alt"] and 1 or 0
@@ -806,12 +867,7 @@ function ENT:StopEngine()
 end
 
 function ENT:CanStart()
-	local FuelSystemOK = true
-	
-	if simfphys.Fuel then
-		FuelSystemOK = self:GetFuel() > 0
-	end
-	
+	local FuelSystemOK = simfphys.Fuel and self:GetFuel() > 0 or true
 	local canstart = self:GetCurHealth() > (self:GetMaxHealth() * 0.1) and FuelSystemOK
 	
 	return canstart
@@ -855,7 +911,7 @@ end
 
 function ENT:PlayerSteerVehicle( ply, left, right )
 	if IsValid( ply ) then
-		local CounterSteeringEnabled = (ply:GetInfoNum( "cl_simfphys_ctenable", 0 ) or 1) == 1
+		local CounterSteeringEnabled = 0
 		local CounterSteeringMul =  math.Clamp(ply:GetInfoNum( "cl_simfphys_ctmul", 0 ) or 0.7,0.1,2)
 		local MaxHelpAngle = math.Clamp(ply:GetInfoNum( "cl_simfphys_ctang", 0 ) or 15,1,90)
 		
@@ -878,6 +934,9 @@ function ENT:PlayerSteerVehicle( ply, left, right )
 		end
 		
 		local SlowSteeringRate = (Ang > 20) and ((math.Clamp((self.ForwardSpeed - 150) / 25,0,1) == 1) and 60 or self.VehicleData["steerangle"]) or self.VehicleData["steerangle"]
+		if(self:GetVelocity():Length() < 500) then
+			SlowSteeringRate = SlowSteeringRate*(math.Clamp(2.5-(1.5*(self:GetVelocity():Length()/500)),1,100))
+		end
 		local FastSteeringAngle = math.Clamp(fastspeedangle,1,SlowSteeringRate)
 		
 		local FastSteeringRate = FastSteeringAngle + ((Ang > (FastSteeringAngle-1)) and 1 or 0) * math.min(Ang,90 - FastSteeringAngle)
@@ -893,7 +952,7 @@ function ENT:PlayerSteerVehicle( ply, left, right )
 		
 		local Rate = extrasmooth and math.max( (math.abs(self.SmoothAng) / self.VehicleData["steerangle"]) ^ 1.5 * TurnSpeed, math.max(1 - self.ForwardSpeed / 2000,0.05) ) or TurnSpeed
 		
-		self.SmoothAng = self.SmoothAng + math.Clamp((Steer - CounterSteer) - self.SmoothAng,-Rate,Rate)
+		self.SmoothAng = self.SmoothAng + math.Clamp((Steer*(MirroredView and -1 or 1) - CounterSteer) - self.SmoothAng,-Rate,Rate)
 		
 		self:SteerVehicle( self.SmoothAng )
 	end
@@ -905,13 +964,11 @@ function ENT:SteerVehicle( steer )
 end
 
 function ENT:Lock()
-	self:SetIsVehicleLocked( true )
-	self:EmitSound( "doors/latchlocked2.wav" )
+	self.VehicleLocked = true
 end
 
 function ENT:UnLock()
-	self:SetIsVehicleLocked( false )
-	self:EmitSound( "doors/latchunlocked1.wav" )
+	self.VehicleLocked = false
 end
 
 function ENT:ForceLightsOff()
@@ -988,19 +1045,16 @@ function ENT:GetMouseSteer()
 end
 
 function ENT:Use( ply )
-	if not IsValid( ply ) then return end
-
-	if self:GetIsVehicleLocked() or self:HasPassengerEnemyTeam( ply ) then 
-		self:EmitSound( "doors/default_locked.wav" )
-
-		return
-	end
-
 	self:SetPassenger( ply )
 end
 
 function ENT:SetPassenger( ply )
 	if not IsValid( ply ) then return end
+	
+	if self.VehicleLocked or self:HasPassengerEnemyTeam( ply ) then 
+		self:EmitSound( "doors/default_locked.wav" )
+		return
+	end
 	
 	if not IsValid(self:GetDriver()) and not ply:KeyDown(IN_WALK) then
 		ply:SetAllowWeaponsInVehicle( false ) 
@@ -1281,7 +1335,7 @@ function ENT:OnSuperCharged( name, old, new )
 		self.BlowerWhine:Stop()
 		
 		self.Blower = CreateSound(self, self.snd_bloweroff or "simulated_vehicles/blower_spin.wav")
-		self.BlowerWhine = CreateSound(self, self.snd_bloweron or "simulated_vehicles/blower_gearwhine.wav")
+		self.BlowerWhine = CreateSound(self, self.snd_bloweron or "pga/blower_whine.wav")
 	
 		self.Blower:PlayEx(0,0)
 		self.BlowerWhine:PlayEx(0,0)
@@ -1312,6 +1366,9 @@ function ENT:OnRemove()
 	if self.Turbo then
 		self.Turbo:Stop()
 	end
+	if self.gearwhine then
+	self.gearwhine:Stop()
+	end
 	if self.Blower then
 		self.Blower:Stop()
 	end
@@ -1332,12 +1389,41 @@ function ENT:PlayPP( On )
 	self.poseon = On and self.LightsPP.max or self.LightsPP.min
 end
 
+function ENT:DamageLoop()
+	if not self:OnFire() then return end
+	
+	local CurHealth = self:GetCurHealth()
+	
+	if CurHealth <= 0 then return end
+	
+	if self:GetMaxHealth() > 30 then
+		if CurHealth > 30 then
+			local dmg = 1
+			if(IsValid(self:GetDriver()) && self:GetDriver():IsPlayer()) then
+				dmg = 1*(1-(self:GetDriver().V_Fire/100))
+			end
+			if(dmg > 0) then
+				self:TakeDamage(dmg, Entity(0), Entity(0) )
+			end
+		elseif CurHealth < 30 then
+			self:SetCurHealth( CurHealth + 1 )
+		end
+	end
+	
+	timer.Simple( 0.125, function()
+		if IsValid( self ) then
+			self:DamageLoop()
+		end
+	end)
+end
+
 function ENT:SetOnFire( bOn )
 	if bOn == self:OnFire() then return end
 	self:SetNWBool( "OnFire", bOn )
 	
 	if bOn then
-		self:DamagedStall()
+		//self:DamagedStall()
+		self:DamageLoop()
 	end
 end
 
@@ -1346,7 +1432,7 @@ function ENT:SetOnSmoke( bOn )
 	self:SetNWBool( "OnSmoke", bOn )
 	
 	if bOn then
-		self:DamagedStall()
+		//self:DamagedStall()
 	end
 end
 

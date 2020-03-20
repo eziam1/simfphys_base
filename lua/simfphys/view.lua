@@ -4,29 +4,29 @@ if CLIENT then
 	LockedPitch = GetConVar( "cl_simfphys_ms_lockedpitch" ):GetFloat()
 end
 
-local function GetViewOverride( ent )
-	if not IsValid( ent ) then return Vector(0,0,0) end
+local function GetViewOverride( vehicle )
+	if not IsValid( vehicle ) then return Vector(0,0,0) end
 	
-	if not ent.customview then
-		local vehiclelist = list.Get( "simfphys_vehicles" )[ ent:GetSpawn_List() ]
+	if not vehicle.customview then
+		local vehiclelist = list.Get( "simfphys_vehicles" )[ vehicle.vehiclebase:GetSpawn_List() ]
 		
 		if vehiclelist then
-			ent.customview = vehiclelist.Members.FirstPersonViewPos or Vector(0,-9,5)
+			vehicle.customview = vehiclelist.Members.FirstPersonViewPos or Vector(0,-9,5)
 		else
-			ent.customview = Vector(0,-9,5)
+			vehicle.customview = Vector(0,-9,5)
 		end
 	end
 	
-	return ent.customview
+	return vehicle.customview
 end
 
 hook.Add("CalcVehicleView", "simfphysViewOverride", function(Vehicle, ply, view)
 
-	local vehiclebase = ply:GetSimfphys()
+	local vehiclebase = Vehicle.vehiclebase
 	
-	if not IsValid( vehiclebase ) then return end
+	if not IsValid(vehiclebase) then return end
 
-	local IsDriverSeat = ply:IsDrivingSimfphys()
+	local IsDriverSeat = Vehicle == vehiclebase:GetDriverSeat()
 	
 	if Vehicle.GetThirdPersonMode == nil or ply:GetViewEntity() ~= ply  then
 		return
@@ -35,7 +35,7 @@ hook.Add("CalcVehicleView", "simfphysViewOverride", function(Vehicle, ply, view)
 	ply.simfphys_smooth_out = 0
 	
 	if not Vehicle:GetThirdPersonMode() then
-		local viewoverride = GetViewOverride( vehiclebase )
+		local viewoverride = GetViewOverride( Vehicle )
 		
 		local X = viewoverride.X
 		local Y = viewoverride.Y
@@ -76,16 +76,16 @@ hook.Add("CalcVehicleView", "simfphysViewOverride", function(Vehicle, ply, view)
 end)
 
 hook.Add("StartCommand", "simfphys_lockview", function(ply, ucmd)
-	if not ply:IsDrivingSimfphys() then return end
-
 	local vehicle = ply:GetVehicle()
+	if not IsValid(vehicle) then return end
 	
-	if not IsValid( vehicle ) then return end
+	local vehiclebase = vehicle.vehiclebase
 	
-	local vehiclebase = ply:GetSimfphys()
+	if not IsValid(vehiclebase) then return end
+
+	local IsDriverSeat = vehicle == vehiclebase:GetDriverSeat()
 	
-	if not IsValid( vehiclebase ) then return end
-	
+	if not IsDriverSeat then return end
 	if not (ply:GetInfoNum( "cl_simfphys_mousesteer", 0 ) == 1) then return end
 	
 	local ang = ucmd:GetViewAngles()

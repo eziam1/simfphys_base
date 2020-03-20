@@ -11,28 +11,135 @@ function ENT:Initialize()
 	self.SoundMode = 0
 	
 	self.DamageSnd = CreateSound(self, "simulated_vehicles/engine_damaged.wav")
+	self.Scrape = CreateSound(self, "pga/carscrape.wav")
+	self.Scrape:ChangeVolume(0)
+	self.Scrape:ChangePitch(50)
+	self.Scrape:SetSoundLevel(75)
+	//self.Scrape:Play()
 
 	self.EngineSounds = {}
 end
 
 function ENT:Think()
 	local curtime = CurTime()
+	if(self:GetHasRainbowNeon()) then
+		self.NeonCurrentColor = self.NeonCurrentColor or 0
+		self.RainbowNeonColor = self.RainbowNeonColor or 0
+		if self.RainbowNeonColor >= 360 then
+			self.RainbowNeonColor = 0
+		end
+		self.RainbowNeonColor = self.RainbowNeonColor + 1
+		hsv = HSVToColor(self.RainbowNeonColor % 360, 1, 1)
+		self.NeonCurrentColor = Vector(hsv.r/255,hsv.g/255,hsv.b/255)
+		local dlight = DynamicLight( self:EntIndex() )
+
+		if ( dlight ) then
+
+			local c = self.NeonCurrentColor or Vector(1,1,1)
+
+			dlight.Pos = self:GetPos()+self:GetUp()*-1
+			dlight.r = c.x*255
+			dlight.g = c.y*255
+			dlight.b = c.z*255
+			dlight.Brightness = 5
+			dlight.Decay = 128 * 5
+			dlight.Size = 128
+			dlight.DieTime = CurTime() + 1
+
+		end
+	elseif(self:GetHasNeon()) then
+		local dlight = DynamicLight( self:EntIndex() )
+
+		if ( dlight ) then
+
+			local c = self:GetNeonColor() or Vector(1,1,1)
+
+			dlight.Pos = self:GetPos()+self:GetUp()*-1
+			dlight.r = c.x*255
+			dlight.g = c.y*255
+			dlight.b = c.z*255
+			dlight.Brightness = 5
+			dlight.Decay = 128 * 5
+			dlight.Size = 128
+			dlight.DieTime = CurTime() + 1
+
+		end
+	end
 	
 	local Active = self:GetActive()
 	local Throttle = self:GetThrottle()
 	local LimitRPM = self:GetLimitRPM()
 	
 	self:ManageSounds( Active, Throttle, LimitRPM )
-
+	
 	self.RunNext = self.RunNext or 0
 	if self.RunNext < curtime then
+		
 		self:ManageEffects( Active, Throttle, LimitRPM )
 		self:CalcFlasher()
 		
-		self.RunNext = curtime + 0.06
+		self.RunNext = curtime + 0.03
 	end
 	
 	self:SetPoseParameters( curtime )
+	
+	local inworldcheckleft = {}
+	inworldcheckleft.start = self:GetPos()+self:GetUp()*(self:OBBMins().z+8)
+	inworldcheckleft.endpos = self:GetPos()+self:GetUp()*8+self:GetRight()*-(self:OBBMaxs().y+8)
+	inworldcheckleft.filter = function( ent ) 
+		if ( ent:IsPlayer() ) then 
+			return false 
+		elseif ( ent == self ) then 
+			return false 
+		elseif ( ent:GetClass() == "gmod_sent_vehicle_fphysics_wheel" ) then 
+			return false 
+		else
+			return true
+		end
+	end
+	local inworldcheckright = {}
+	inworldcheckright.start = self:GetPos()+self:GetUp()*(self:OBBMins().z+8)
+	inworldcheckright.endpos = self:GetPos()+self:GetUp()*8+self:GetRight()*(self:OBBMaxs().y+8)
+	inworldcheckright.filter = function( ent ) 
+		if ( ent:IsPlayer() ) then 
+			return false 
+		elseif ( ent == self ) then 
+			return false 
+		elseif ( ent:GetClass() == "gmod_sent_vehicle_fphysics_wheel" ) then 
+			return false 
+		else
+			return true
+		end
+	end
+	local inworldcheckup = {}
+	inworldcheckup.start = self:GetPos()+self:GetUp()*((self:OBBMins().z+self:OBBMaxs().z)/2)
+	inworldcheckup.endpos = self:GetPos()+self:GetUp()*(self:OBBMaxs().z+8)
+	inworldcheckup.filter = function( ent ) 
+		if ( ent:IsPlayer() ) then 
+			return false 
+		elseif ( ent == self ) then 
+			return false 
+		elseif ( ent:GetClass() == "gmod_sent_vehicle_fphysics_wheel" ) then 
+			return false 
+		else
+			return true
+		end
+	end
+	self.traceleft = util.TraceLine( inworldcheckleft )
+	self.traceright = util.TraceLine( inworldcheckright )
+	self.traceup = util.TraceLine( inworldcheckup )
+	if(self.Scrape) then
+		if((self.traceleft.Hit or self.traceright.Hit or self.traceup.Hit) && self:GetVelocity():Length() > 150) then
+			if(!self.Scrape:IsPlaying()) then
+				self.Scrape:Play()
+			end
+			self.Scrape:ChangePitch(math.Clamp(self:GetVelocity():Length()/7,50,100))
+			self.Scrape:ChangeVolume(math.Clamp((self:GetVelocity():Length()-150)/250,0,1))
+		else
+			self.Scrape:ChangePitch(50)
+			self.Scrape:ChangeVolume(0)
+		end
+	end
 	
 	self:NextThink( curtime )
 	
@@ -133,7 +240,7 @@ function ENT:GetRPM()
 end
 
 function ENT:DamageEffects()
-	local Pos = self:GetEnginePos()
+	local Pos = self:GetPos()
 	local Scale = self:GetCurHealth() / self:GetMaxHealth()
 	local smoke = self:OnSmoke() and Scale <= 0.5
 	local fire = self:OnFire()
@@ -198,7 +305,13 @@ function ENT:ManageEffects( Active, fThrottle, LimitRPM )
 					effectdata:SetAngles( self.ExhaustPositions[i].ang )
 					effectdata:SetMagnitude( Scale ) 
 					effectdata:SetEntity( self )
-				util.Effect( "simfphys_exhaust", effectdata )
+				if(self:GetNWBool("usingnitro") == true) then
+					util.Effect( "simfphys_exhaust_nitro", effectdata )
+				else
+					if(GetConVar("pga_disable_exhaust_smoke"):GetInt() == 0) then
+						util.Effect( "simfphys_exhaust", effectdata )
+					end
+				end
 			end
 		else
 			local effectdata = EffectData()
@@ -206,7 +319,13 @@ function ENT:ManageEffects( Active, fThrottle, LimitRPM )
 				effectdata:SetAngles( self.ExhaustPositions[i].ang )
 				effectdata:SetMagnitude( Scale ) 
 				effectdata:SetEntity( self )
-			util.Effect( "simfphys_exhaust", effectdata )
+			if(self:GetNWBool("usingnitro") == true) then
+				util.Effect( "simfphys_exhaust_nitro", effectdata )
+			else
+				if(GetConVar("pga_disable_exhaust_smoke"):GetInt() == 0) then
+					util.Effect( "simfphys_exhaust", effectdata )
+				end
+			end
 		end
 	end
 end
@@ -224,13 +343,10 @@ function ENT:ManageSounds( Active, fThrottle, LimitRPM )
 	local Clutch = self:GetClutch()
 	local FadeRPM = LimitRPM * 0.5
 	
-	local FT = FrameTime()
-	local Rate = 3.33 * FT
-	
-	self.FadeThrottle = self.FadeThrottle + math.Clamp(Throttle - self.FadeThrottle,-Rate,Rate)
+	self.FadeThrottle = self.FadeThrottle + math.Clamp(Throttle - self.FadeThrottle,-0.2,0.2)
 	self.PitchOffset = self.PitchOffset + ((CurDist - self.OldDist) * 0.23 - self.PitchOffset) * 0.5
 	self.OldDist = CurDist
-	self.SmoothRPM = self.SmoothRPM + math.Clamp(FlyWheelRPM - self.SmoothRPM,-0.972 * FT * LimitRPM,1.66 * FT * LimitRPM)
+	self.SmoothRPM = self.SmoothRPM + math.Clamp(FlyWheelRPM - self.SmoothRPM,-(350 / 6000) * LimitRPM,(600 / 6000) * LimitRPM)
 	
 	self.OldThrottle2 = self.OldThrottle2 or 0
 	if Throttle ~= self.OldThrottle2 then
@@ -244,7 +360,7 @@ function ENT:ManageSounds( Active, fThrottle, LimitRPM )
 	
 	if self:GetRevlimiter() and LimitRPM > 2500 then
 		if (self.SmoothRPM >= LimitRPM - 200) and self.FadeThrottle > 0 then
-			self.SmoothRPM = self.SmoothRPM - 0.2 * LimitRPM
+			self.SmoothRPM = self.SmoothRPM - (1200 / 6000) * LimitRPM
 			self.FadeThrottle = 0.2
 			self:Backfire()
 		end
@@ -262,7 +378,7 @@ function ENT:ManageSounds( Active, fThrottle, LimitRPM )
 			local MaxHealth = self:GetMaxHealth()
 			local Health = self:GetCurHealth()
 			
-			if Health <= (MaxHealth * 0.6) then
+			if Health <= (MaxHealth * 0.4) then
 				self.DamageSnd:PlayEx(0,0)
 			end
 			
@@ -270,10 +386,16 @@ function ENT:ManageSounds( Active, fThrottle, LimitRPM )
 				self.HighRPM = CreateSound(self, self.EngineSounds[ "HighRPM" ] )
 				self.LowRPM = CreateSound(self, self.EngineSounds[ "LowRPM" ])
 				self.Idle = CreateSound(self, self.EngineSounds[ "Idle" ])
+				self.LimitSound = CreateSound(self, self.EngineSounds[ "LimitSound" ])
 				
 				self.HighRPM:PlayEx(0,0)
+				self.HighRPM:SetSoundLevel(85)
 				self.LowRPM:PlayEx(0,0)
+				self.LowRPM:SetSoundLevel(85)
 				self.Idle:PlayEx(0,0)
+				self.Idle:SetSoundLevel(75)
+				self.LimitSound:PlayEx(0,0)
+				self.LimitSound:SetSoundLevel(85)
 			else
 				local IdleSound = self.EngineSounds[ "IdleSound" ]
 				local LowSound = self.EngineSounds[ "LowSound" ]
@@ -283,21 +405,25 @@ function ENT:ManageSounds( Active, fThrottle, LimitRPM )
 				if IdleSound then
 					self.Idle = CreateSound(self, IdleSound)
 					self.Idle:PlayEx(0,0)
+					self.Idle:SetSoundLevel(75)
 				end
 				
 				if LowSound then
 					self.LowRPM = CreateSound(self, LowSound)
 					self.LowRPM:PlayEx(0,0)
+					self.LowRPM:SetSoundLevel(95)
 				end
 				
 				if HighSound then
 					self.HighRPM = CreateSound(self, HighSound)
 					self.HighRPM:PlayEx(0,0)
+					self.HighRPM:SetSoundLevel(100)
 				end
 				
 				if ThrottleSound then
 					self.Valves = CreateSound(self, ThrottleSound)
 					self.Valves:PlayEx(0,0)
+					self.Valves:SetSoundLevel(85)
 				end
 			end
 		else
@@ -397,6 +523,19 @@ function ENT:ManageSounds( Active, fThrottle, LimitRPM )
 			local hivol = math.max((self.SmoothRPM - 2000) / 2000,0) * Volume
 			self.HighRPM:ChangeVolume( self.FadeThrottle < 0.4 and hivol * self.FadeThrottle or hivol * self.FadeThrottle * 2.5 )
 			self.HighRPM:ChangePitch( math.Clamp( Pitch * self.PitchMulHigh,0,255) )
+			
+			if(self.SmoothRPM >= (LimitRPM-50) && self.FadeThrottle > 0 && self.LimitSound) then
+			self.HighRPM:ChangeVolume(0)
+			self.LimitSound:ChangeVolume(0.75)
+			self.LimitSound:ChangePitch(100*self.LimitPitch)
+			else
+			local hivol = math.max((self.SmoothRPM - 2000) / 2000,0) * Volume
+			self.HighRPM:ChangeVolume( self.FadeThrottle < 0.4 and hivol * self.FadeThrottle or hivol * self.FadeThrottle * 2.5 )
+			self.HighRPM:ChangePitch( math.Clamp( Pitch * self.PitchMulHigh,0,255) )
+			if(self.LimitSound) then
+			self.LimitSound:ChangeVolume(0)
+			end
+			end
 		else
 			if Gear ~= self.OldGear then
 				if self.SmoothRPM >= FadeRPM and Gear > 3 then
@@ -514,6 +653,133 @@ function ENT:SetSoundPreset(index)
 				local revdown = vehiclelist.Members.snd_low_revdown or ""
 				local gearup = vehiclelist.Members.snd_mid_gearup or ""
 				local geardown = vehiclelist.Members.snd_mid_geardown or ""
+				local limitpitch = vehiclelist.Members.limitpitch or 1
+				local limitsound = "common/null.wav"
+				if(string.find(mid,"lamborghini_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/porsche_limit.wav"
+				elseif(string.find(mid,"lambo")) then
+					limitsound = "eziam/raceattack/vehicles/lamborghini_limit.wav"
+				elseif(string.find(mid,"240sx")) then
+					limitsound = "eziam/raceattack/vehicles/240sx_limit.wav"
+				elseif(string.find(mid,"bmw")) then
+					limitsound = "eziam/raceattack/vehicles/bmw_limit.wav"
+				elseif(string.find(mid,"ccx_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/ccx_tuned_limit.wav"
+				elseif(string.find(mid,"ccx")) then
+					limitsound = "eziam/raceattack/vehicles/ccx_limit.wav"
+				elseif(string.find(mid,"clk500")) then
+					limitsound = "eziam/raceattack/vehicles/clk500_limit.wav"
+				elseif(string.find(mid,"corvette")) then
+					limitsound = "eziam/raceattack/vehicles/corvette_limit.wav"
+				elseif(string.find(mid,"eclipse")) then
+					limitsound = "eziam/raceattack/vehicles/eclipse_limit.wav"
+				elseif(string.find(mid,"lotus_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/lotus_tuned_limit.wav"
+				elseif(string.find(mid,"lotus")) then
+					limitsound = "eziam/raceattack/vehicles/lotus_limit.wav"
+				elseif(string.find(mid,"mazda_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/mazda_tuned_limit.wav"
+				elseif(string.find(mid,"mazda2")) then
+					limitsound = "eziam/raceattack/vehicles/mazda2_limit.wav"
+				elseif(string.find(mid,"mazda")) then
+					limitsound = "eziam/raceattack/vehicles/mazda_limit.wav"
+				elseif(string.find(mid,"mclarenf1")) then
+					limitsound = "eziam/raceattack/vehicles/mclarenf1_limit.wav"
+				elseif(string.find(mid,"mclaren")) then
+					limitsound = "eziam/raceattack/vehicles/mclaren_limit.wav"
+				elseif(string.find(mid,"muscle3")) then
+					limitsound = "eziam/raceattack/vehicles/muscle3_limit.wav"
+				elseif(string.find(mid,"muscle2")) then
+					limitsound = "eziam/raceattack/vehicles/muscle2_limit.wav"
+				elseif(string.find(mid,"muscle")) then
+					limitsound = "eziam/raceattack/vehicles/camaro_limit.wav"
+				elseif(string.find(mid,"nissan_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/nissan_tuned_limit.wav"
+				elseif(string.find(mid,"nissan")) then
+					limitsound = "eziam/raceattack/vehicles/nissan_limit.wav"
+				elseif(string.find(mid,"pagani_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/pagani_tuned_limit.wav"
+				elseif(string.find(mid,"pagani") or string.find(mid,"zonda")) then
+					limitsound = "eziam/raceattack/vehicles/pagani_limit.wav"
+				elseif(string.find(mid,"porsche_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/porsche_tuned_limit.wav"
+				elseif(string.find(mid,"porsche")) then
+					limitsound = "eziam/raceattack/vehicles/porsche_limit.wav"
+				elseif(string.find(mid,"shelby") or string.find(mid,"gt500")) then
+					limitsound = "eziam/raceattack/vehicles/shelby_limit.wav"
+				elseif(string.find(mid,"skyline_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/skyline_tuned_limit.wav"
+				elseif(string.find(mid,"skyline")) then
+					limitsound = "eziam/raceattack/vehicles/skyline_limit.wav"
+				elseif(string.find(mid,"subaru_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/subaru_tuned_limit.wav"
+				elseif(string.find(mid,"subaru")) then
+					limitsound = "eziam/raceattack/vehicles/subaru_limit.wav"
+				elseif(string.find(mid,"viper_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/viper_tuned_limit.wav"
+				elseif(string.find(mid,"viper")) then
+					limitsound = "eziam/raceattack/vehicles/viper_limit.wav"
+				elseif(string.find(mid,"truck1")) then
+					limitsound = "eziam/raceattack/vehicles/truck1_limit.wav"
+				elseif(string.find(mid,"truck2")) then
+					limitsound = "eziam/raceattack/vehicles/truck2_limit.wav"
+				elseif(string.find(mid,"f1")) then
+					limitsound = "eziam/raceattack/vehicles/f1_limit.wav"
+				elseif(string.find(mid,"nigra")) then
+					limitsound = "eziam/raceattack/vehicles/nigra_limit.wav"
+				elseif(string.find(mid,"renault")) then
+					limitsound = "eziam/raceattack/vehicles/renault_limit.wav"
+				elseif(string.find(mid,"v8")) then
+					limitsound = "eziam/raceattack/vehicles/v8_limit.wav"
+				elseif(string.find(mid,"carrera")) then
+					limitsound = "eziam/raceattack/vehicles/carrera_limit.wav"
+				elseif(string.find(mid,"corolla")) then
+					limitsound = "eziam/raceattack/vehicles/corolla_tuned_limit.wav"
+				elseif(string.find(mid,"muscle2")) then
+					limitsound = "eziam/raceattack/vehicles/muscle2_limit.wav"
+				elseif(string.find(mid,"evo")) then
+					limitsound = "eziam/raceattack/vehicles/evo_limit.wav"
+				elseif(string.find(mid,"db9")) then
+					limitsound = "eziam/raceattack/vehicles/db9_limit.wav"
+				elseif(string.find(mid,"speed3")) then
+					limitsound = "eziam/raceattack/vehicles/speed3_limit.wav"
+				elseif(string.find(mid,"300c")) then
+					limitsound = "eziam/raceattack/vehicles/300c_limit.wav"
+				elseif(string.find(mid,"monstertruck")) then
+					limitsound = "eziam/raceattack/vehicles/monstertruck_limit.wav"
+				elseif(string.find(mid,"golf_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/golf_tuned_limit.wav"
+				elseif(string.find(mid,"golf")) then
+					limitsound = "eziam/raceattack/vehicles/golf_limit.wav"
+				elseif(string.find(mid,"mr2_tuned")) then
+					limitsound = "eziam/raceattack/vehicles/mr2_tuned_limit.wav"
+				elseif(string.find(mid,"mr2")) then
+					limitsound = "eziam/raceattack/vehicles/mr2_limit.wav"
+				elseif(string.find(mid,"audi")) then
+					limitsound = "eziam/raceattack/vehicles/audi_limit.wav"
+				elseif(string.find(mid,"gts")) then
+					limitsound = "eziam/raceattack/vehicles/gts_limit.wav"
+				elseif(string.find(mid,"aventador")) then
+					limitsound = "eziam/raceattack/vehicles/aventador_limit.wav"
+				elseif(string.find(mid,"mustang")) then
+					limitsound = "eziam/raceattack/vehicles/mustang_limit.wav"
+				elseif(string.find(mid,"919")) then
+					limitsound = "eziam/raceattack/vehicles/919_limit.wav"
+				elseif(string.find(mid,"rc")) then
+					limitsound = "eziam/raceattack/vehicles/rc_limit.wav"
+				elseif(string.find(mid,"jet")) then
+					limitsound = "eziam/raceattack/vehicles/jet_limit.wav"
+				elseif(string.find(mid,"tt_")) then
+					limitsound = "eziam/raceattack/vehicles/tt_limit.wav"
+				elseif(string.find(mid,"dbr9")) then
+					limitsound = "eziam/raceattack/vehicles/dbr9_limit.wav"
+				elseif(string.find(mid,"m4")) then
+					limitsound = "eziam/raceattack/vehicles/m4_limit.wav"
+				elseif(string.find(mid,"supra")) then
+					limitsound = "eziam/raceattack/vehicles/supra_limit.wav"
+				elseif(string.find(mid,"gtr")) then
+					limitsound = "eziam/raceattack/vehicles/gtr_limit.wav"
+				end
 				
 				self.EngineSounds[ "Idle" ] = idle ~= "" and idle or false
 				self.EngineSounds[ "LowRPM" ] = low ~= "" and low or false
@@ -521,6 +787,8 @@ function ENT:SetSoundPreset(index)
 				self.EngineSounds[ "RevDown" ] = revdown ~= "" and revdown or low
 				self.EngineSounds[ "ShiftUpToHigh" ] = gearup ~= "" and gearup or mid
 				self.EngineSounds[ "ShiftDownToHigh" ] = geardown ~= "" and geardown or gearup
+				self.EngineSounds[ "LimitSound" ] = limitsound
+				self.LimitPitch = limitpitch
 				
 				self.PitchMulLow = vehiclelist.Members.snd_low_pitch or 1
 				self.PitchMulHigh = vehiclelist.Members.snd_mid_pitch or 1
@@ -638,13 +906,13 @@ function ENT:PrecacheSounds()
 	end
 end
 
-function ENT:GetVehicleInfo()
-	return self.VehicleInfo
-end
-
 function ENT:SaveStopSounds()
 	if self.HighRPM then
 		self.HighRPM:Stop()
+	end
+	
+	if self.LimitSound then
+		self.LimitSound:Stop()
 	end
 	
 	if self.LowRPM then
@@ -661,6 +929,10 @@ function ENT:SaveStopSounds()
 	
 	if self.DamageSnd then
 		self.DamageSnd:Stop()
+	end
+	
+	if self.Scrape then
+		self.Scrape:Stop()
 	end
 end
 

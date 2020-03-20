@@ -38,22 +38,7 @@ function EFFECT:Init( data )
 			end
 			
 			local snd = bdamaged and snd1 or snd2
-			
-			Entity.CurBackFireSound = CreateSound( Entity, snd )
-			Entity.CurBackFireSound:Play()
-			
-			Entity:CallOnRemove( "stopbfsounds", function( Entity )
-				if Entity.CurBackFireSound then
-					Entity.CurBackFireSound:Stop()
-				end
-			end)
-			
-			timer.Simple(5, function() 
-				if not IsValid( Entity ) then return end
-				if Entity.CurBackFireSound then
-					Entity.CurBackFireSound:Stop()
-				end
-			end )
+			sound.Play( snd, Pos, 90, math.random(90,120) )
 			
 			local dlight = DynamicLight( Entity:EntIndex() * math.random(1,4) )
 			if dlight then

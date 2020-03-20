@@ -22,7 +22,15 @@ function ENT:WheelOnGround()
 				endpos = startpos + dir * len,
 				maxs = HullSize,
 				mins = -HullSize,
-				filter = self.VehicleData["filter"]
+				mask = MASK_SOLID,
+				//filter = self.VehicleData["filter"]
+				filter = function( ent ) 
+					if ( ent == self or ent:GetClass() == "gmod_sent_vehicle_fphysics_wheel" or ent:IsPlayer() or ent:GetSolidFlags() == FSOLID_MAX_BITS ) then 
+						return false
+					else
+						return true
+					end 
+				end
 			} )
 			
 			if tr.Hit then
@@ -46,12 +54,16 @@ end
 
 function ENT:SimulateAirControls(tilt_forward,tilt_back,tilt_left,tilt_right)
 	if self:IsDriveWheelsOnGround() then return end
-	
-	local PObj = self:GetPhysicsObject()
-	
-	local TiltForce = ((self.Right * (tilt_right - tilt_left) * 1.8) + (self.Forward * (tilt_forward - tilt_back) * 6)) * math.acos( math.Clamp( self.Up:Dot(Vector(0,0,1)) ,-1,1) ) * (180 / math.pi) * self.Mass
-	PObj:ApplyForceOffset( TiltForce, PObj:GetMassCenter() + self.Up )
-	PObj:ApplyForceOffset( -TiltForce, PObj:GetMassCenter() - self.Up )
+	if(IsValid(self:GetDriver())) then
+		if(self:GetDriver():IsPlayer() && self:GetDriver():KeyDown(IN_JUMP)) then
+		
+		local PObj = self:GetPhysicsObject()
+		
+		local TiltForce = ((self.Right * ((tilt_right*(MirroredView and -1 or 1)) - (tilt_left*(MirroredView and -1 or 1))) * 2) + (self.Forward * (tilt_forward - tilt_back) * 4)) * math.acos( math.Clamp( self.Up:Dot(Vector(0,0,1)) ,-1,1) ) * (180 / math.pi) * self.Mass
+		PObj:ApplyForceOffset( TiltForce, PObj:GetMassCenter() + self.Up )
+		PObj:ApplyForceOffset( -TiltForce, PObj:GetMassCenter() - self.Up )
+		end
+	end
 end
 
 function ENT:SimulateEngine(IdleRPM,LimitRPM,Powerbandstart,Powerbandend,c_time)
@@ -86,11 +98,11 @@ function ENT:SimulateEngine(IdleRPM,LimitRPM,Powerbandstart,Powerbandend,c_time)
 	local SuperCharged = self:GetSuperCharged()
 	local boost = (TurboCharged and self:SimulateTurbo(Powerbandend) or 0) * 0.3 + (SuperCharged and self:SimulateBlower(Powerbandend) or 0)
 	
-	if self:GetCurHealth() <= self:GetMaxHealth() * 0.3 then
-		MaxTorque = MaxTorque * (self:GetCurHealth() / (self:GetMaxHealth() * 0.3))
-	end
+	/*if self:GetCurHealth() <= self:GetMaxHealth() * 0.3 then
+		MaxTorque = MaxTorque * (self:GetCurHealth() / (self:GetMaxHealth() * 0.3)),0.5,1
+	end*/
 	
-	self.EngineRPM = math.Clamp(self.EngineRPM + math.Clamp(DesRPM - self.EngineRPM,-math.max(self.EngineRPM / 15, 1 ),math.max(-self.RpmDiff / 1.5 * InvClutch + (self.Torque * 5) / 0.15 * self.Clutch, 1)) + self.RPM_DIFFERENCE * Throttle,0,LimitRPM) * self.EngineIsOn
+	self.EngineRPM = math.Clamp(self.EngineRPM + math.Clamp(DesRPM - self.EngineRPM,-math.max(self.EngineRPM / 15, 1 ),math.max(-self.RpmDiff / 1.5 * InvClutch + (self.Torque * 1) / 0.15 * self.Clutch, 1)) + self.RPM_DIFFERENCE * Throttle,0,LimitRPM) * self.EngineIsOn
 	self.Torque = (Throttle + boost) * math.max(MaxTorque * math.min(self.EngineRPM / Powerbandstart, (LimitRPM - self.EngineRPM) / (LimitRPM - Powerbandend),1), 0)
 	self:SetFlyWheelRPM( math.min(self.EngineRPM + self.exprpmdiff * 2 * InvClutch,LimitRPM) )
 	
@@ -101,7 +113,7 @@ function ENT:SimulateEngine(IdleRPM,LimitRPM,Powerbandstart,Powerbandend,c_time)
 	local signSpeed = ((self.ForwardSpeed > 0) and 1 or 0) + ((self.ForwardSpeed < 0) and -1 or 0)
 	
 	local TorqueDiff = (self.RpmDiff / LimitRPM) * 0.15 * self.Torque
-	local EngineBrake = (signThrottle == 0) and math.min( self.EngineRPM * (self.EngineRPM / LimitRPM) ^ 2 / 60 * signSpeed, 100 ) or 0
+	local EngineBrake = (signThrottle == 0) and self.EngineRPM * (self.EngineRPM / LimitRPM) ^ 2 / 60 * signSpeed or 0
 	
 	local GearedPower = ((self.ThrottleDelay <= c_time and (self.Torque + TorqueDiff) * signThrottle * signGearRatio or 0) - EngineBrake) / math.abs(self.GearRatio) / 50
 	
@@ -132,11 +144,29 @@ function ENT:SimulateEngine(IdleRPM,LimitRPM,Powerbandstart,Powerbandend,c_time)
 		if Fuel <= 0 and IsRunning then
 			self:StopEngine()
 		end
-	else
-		self:SetFuelUse( -1 )
 	end
-	
 	local ReactionForce = (self.EngineTorque * 2 - math.Clamp(self.ForwardSpeed,-self.Brake,self.Brake)) * self.DriveWheelsOnGround
+	if(game.GetMap() == "gmr_ldt_drag_bphx") then
+		if(!self.wheeliedone) then
+			ReactionForce = (self.EngineTorque * 5.6 + math.Clamp(self.ForwardSpeed/3,-self.Brake,300)) * self.DriveWheelsOnGround
+			if(self.ForwardSpeed < 0 or self.ForwardSpeed > 1000*(self:GetMaxTorque()*self:GetEfficiency())/150) then
+				ReactionForce = (self.EngineTorque * 2 - math.Clamp(self.ForwardSpeed,-self.Brake,self.Brake)) * self.DriveWheelsOnGround
+			end
+		end
+		if(!self.wheeliedone && IsValid(self:GetDriver()) && self:GetDriver():IsPlayer() && self:GetDriver():GetNWBool("inrace")) then
+			if(!self.doingwheelie && self:GetPhysicsObject():GetAngles().x < -10) then
+				self.doingwheelie = true
+				self:GetDriver():SetNWInt("wheeliescore", math.Round(self:GetDriver():GetNWInt("wheeliescore") + math.Clamp(((math.Clamp(-self:GetPhysicsObject():GetAngles().x-10,1,1000))*self.ForwardSpeed)/160,0,10000),0))
+			elseif(self:GetPhysicsObject():GetAngles().x < -5) then
+				self:GetDriver():SetNWInt("wheeliescore", math.Round(self:GetDriver():GetNWInt("wheeliescore") + math.Clamp(((math.Clamp(-self:GetPhysicsObject():GetAngles().x-10,1,1000))*self.ForwardSpeed)/160,0,10000),0))
+			elseif(self.doingwheelie) then
+				self.wheeliedone = true
+			end
+		end
+		if(!self.wheeliedone && self.doingwheelie && self:GetPhysicsObject():GetAngles().x >= -5) then
+			self.wheeliedone = true
+		end
+	end
 	local BaseMassCenter = PObj:GetMassCenter()
 	local dt_mul = math.max( math.min(self:GetPowerDistribution() + 0.5,1),0)
 	
@@ -147,6 +177,7 @@ end
 function ENT:SimulateTransmission(k_throttle,k_brake,k_fullthrottle,k_clutch,k_handbrake,k_gearup,k_geardown,isauto,IdleRPM,Powerbandstart,Powerbandend,shiftmode,cruisecontrol,curtime)
 	local GearsCount = table.Count( self.Gears ) 
 	local cruiseThrottle = math.min( math.max(self.cc_speed - math.abs(self.ForwardSpeed),0) / 10 ^ 2, 1)
+	k_handbrake = 0
 	
 	if isnumber(self.ForceTransmission) then
 		isauto = self.ForceTransmission <= 1
@@ -168,6 +199,7 @@ function ENT:SimulateTransmission(k_throttle,k_brake,k_fullthrottle,k_clutch,k_h
 				
 				if self.CurrentGear ~= GearsCount then
 					self.ThrottleDelay = curtime + 0.4 - 0.4 * k_clutch
+					self:EmitSound("eziam/raceattack/"..self.ShiftSound.."2.ogg",70,math.random(95,105),1,CHAN_ITEM)
 				end
 				
 				self.CurrentGear = math.Clamp(self.CurrentGear + 1,1,GearsCount)
@@ -179,11 +211,15 @@ function ENT:SimulateTransmission(k_throttle,k_brake,k_fullthrottle,k_clutch,k_h
 			
 			if k_geardown == 1 then
 				
+				if self.CurrentGear > 1 then
+				self:EmitSound("eziam/raceattack/"..self.ShiftSound.."1.ogg",70,math.random(95,105),1,CHAN_ITEM)
+				end
 				self.CurrentGear = math.Clamp(self.CurrentGear - 1,1,GearsCount)
 				
 				if self.CurrentGear == 1 then 
 					self.ThrottleDelay = curtime + 0.25
 				end
+	
 			end
 		end
 	else 
@@ -237,13 +273,29 @@ function ENT:SimulateTransmission(k_throttle,k_brake,k_fullthrottle,k_clutch,k_h
 					
 					if CanShiftUp and self.NextShift < curtime then
 						self.CurrentGear = self.CurrentGear + 1
+						if(self.BetterShifting) then
+						self.NextShift = curtime + 0.2
+						self.ThrottleDelay = curtime + self.shiftduration - 0.25
+						else
 						self.NextShift = curtime + 0.5
-						self.ThrottleDelay = curtime + 0.25
+						self.ThrottleDelay = curtime + self.shiftduration
+						end
+						if self:GetTurboCharged() then
+						self:EmitSound("pga/blowoff"..math.random(1,5)..".ogg", 85, math.random(90,115),0.35,CHAN_STATIC)
+						self:EmitSound("eziam/raceattack/blowoff"..math.random(1,2)..".ogg", 80, math.random(90,115),0.5,CHAN_STATIC)
+						self:EmitSound("pga/blowofflayer.ogg", 80, math.random(90,115),0.6,CHAN_STATIC)
+						end
+						self:EmitSound("eziam/raceattack/"..self.ShiftSound.."2.ogg",70,math.random(95,105),1,CHAN_ITEM)
 					end
 					
 					if CanShiftDown and self.NextShift < curtime then
 						self.CurrentGear = self.CurrentGear - 1
+						if(self.BetterShifting) then
+						self.NextShift = curtime + 0.15
+						else
 						self.NextShift = curtime + 0.35
+						end
+						self:EmitSound("eziam/raceattack/"..self.ShiftSound.."1.ogg",70,math.random(95,105),1,CHAN_ITEM)
 					end
 					
 					self.CurrentGear = math.Clamp(self.CurrentGear,3,GearsCount)
@@ -324,7 +376,11 @@ function ENT:SimulateWheels(k_clutch,LimitRPM)
 			local WheelPos = self:LogicWheelPos( i )
 			local WheelRadius = WheelPos.IsFrontWheel and self.FrontWheelRadius or self.RearWheelRadius
 			local WheelDiameter = WheelRadius * 2
-			local SurfaceMultiplicator = self.VehicleData[ "SurfaceMul_" .. i ]
+			local awd = 1
+			if(self:GetPowerDistribution() == 0) then
+				awd = 1.35
+			end
+			local SurfaceMultiplicator = math.Clamp(self.VehicleData[ "SurfaceMul_" .. i ]*awd,0,1)
 			local MaxTraction = (WheelPos.IsFrontWheel and (MaxGrip + GripOffset) or  (MaxGrip - GripOffset)) * SurfaceMultiplicator
 			
 			local IsPoweredWheel = (WheelPos.IsFrontWheel and self.FrontWheelPowered or not WheelPos.IsFrontWheel and self.RearWheelPowered) and 1 or 0
@@ -348,20 +404,21 @@ function ENT:SimulateWheels(k_clutch,LimitRPM)
 				end
 			end
 			
-			local Ax = math.deg( math.acos( math.Clamp( Forward:Dot(VelForward) ,-1,1) ) )
-			local Ay = math.deg( math.asin( math.Clamp( Right:Dot(VelForward) ,-1,1) ) )
+			local Ax = math.acos( math.Clamp( Forward:Dot(VelForward) ,-1,1) ) * (180 / math.pi)
+			local Ay = math.asin( math.Clamp( Right:Dot(VelForward) ,-1,1) ) * (180 / math.pi)
 			
-			local Fx = math.cos( math.rad( Ax ) ) * Velocity:Length()
-			local Fy = math.sin( math.rad( Ay ) ) * Velocity:Length()
+			local Fx = math.cos(Ax * (math.pi / 180)) * Velocity:Length()
+			local Fy = math.sin(Ay * (math.pi / 180)) * Velocity:Length()
 			
 			local absFy = math.abs(Fy)
 			local absFx = math.abs(Fx)
+			self.skidy = Fy
+			self.skidx = Fx
 			
 			local PowerBiasMul = WheelPos.IsFrontWheel and (1 - self:GetPowerDistribution()) * 0.5 or (1 + self:GetPowerDistribution()) * 0.5
 			local BrakeForce = math.Clamp(-Fx,-self.Brake,self.Brake) * SurfaceMultiplicator
 			
-			local TorqueConv = self.EngineTorque * PowerBiasMul * IsPoweredWheel
-			local ForwardForce = TorqueConv + (not WheelPos.IsFrontWheel and math.Clamp(-Fx,-self.HandBrake,self.HandBrake) or 0) + BrakeForce * 0.5
+			local ForwardForce = self.EngineTorque * PowerBiasMul * IsPoweredWheel + (not WheelPos.IsFrontWheel and math.Clamp(-Fx,-self.HandBrake,self.HandBrake) or 0) + BrakeForce * 0.5
 			
 			local TractionCycle = Vector(math.min(absFy,MaxTraction),ForwardForce,0):Length()
 			
@@ -390,16 +447,12 @@ function ENT:SimulateWheels(k_clutch,LimitRPM)
 			self.VehicleData[ "Exp_GLF_".. i ] = GripLossFaktor ^ 2
 			Wheel:SetGripLoss( GripLossFaktor )
 			
-			local WheelOPow = math.abs( self.CurrentGear == 1 and math.min( TorqueConv, 0 ) or math.max( TorqueConv, 0 ) ) > 0
-			local FrontWheelCanTurn = (WheelOPow and 0 or self.Brake) < MaxTraction * 1.75
-			local RearWheelCanTurn = (self.HandBrake < MaxTraction) and (WheelOPow and 0 or self.Brake) < MaxTraction * 2
-			
 			if WheelPos.IsFrontWheel then
-				if FrontWheelCanTurn then
+				if self.Brake < MaxTraction * 2 then
 					self.VehicleData[ "spin_" .. i ] = self.VehicleData[ "spin_" .. i ] + TurnWheel
 				end
 			else
-				if RearWheelCanTurn then
+				if self.HandBrake < MaxTraction then
 					self.VehicleData[ "spin_" .. i ] = self.VehicleData[ "spin_" .. i ] + TurnWheel
 				end
 			end
@@ -409,8 +462,8 @@ function ENT:SimulateWheels(k_clutch,LimitRPM)
 				local Angle = GhostEnt:GetAngles()
 				local offsetang = WheelPos.IsFrontWheel and self.CustomWheelAngleOffset or (self.CustomWheelAngleOffset_R or self.CustomWheelAngleOffset)
 				local Direction = GhostEnt:LocalToWorldAngles( offsetang ):Forward()
-				local TFront = FrontWheelCanTurn and TurnWheel or 0
-				local TBack = RearWheelCanTurn and TurnWheel or 0
+				local TFront = (self.Brake < MaxTraction * 2) and TurnWheel or 0
+				local TBack = (self.Brake < MaxTraction * 2) and TurnWheel or 0
 				
 				local AngleStep = WheelPos.IsFrontWheel and TFront or TBack
 				Angle:RotateAroundAxis(Direction, WheelPos.IsRightWheel and AngleStep or -AngleStep)
@@ -458,12 +511,13 @@ function ENT:SimulateTurbo(LimitRPM)
 	self.SmoothTurbo = self.SmoothTurbo + math.Clamp(math.min(self.EngineRPM / LimitRPM,1) * 600 * (0.75 + 0.25 * Throttle) - self.SmoothTurbo,-15,15)
 	
 	local Volume = math.Clamp( ((self.SmoothTurbo - 300) / 150) ,0, 1) * 0.5
-	local Pitch = math.Clamp( self.SmoothTurbo / 7 , 0 , 255)
+	local Pitch = math.Clamp( self.SmoothTurbo / 5 , 0 , 255)
 	
 	local boost = math.Clamp( -0.25 + (self.SmoothTurbo / 500) ^ 5,0,1)
 	
 	self.Turbo:ChangeVolume( Volume )
 	self.Turbo:ChangePitch( Pitch )
+	self.Turbo:SetSoundLevel( 75 )
 	
 	return boost
 end
@@ -479,15 +533,17 @@ function ENT:SimulateBlower(LimitRPM)
 	local Volume2 = math.Clamp( self.SmoothBlower / 400 * (0.10 + 0.4 * Throttle) ,0, 1)
 	
 	local Pitch1 = 50 + math.Clamp( self.SmoothBlower / 4.5 , 0 , 205)
-	local Pitch2 = Pitch1 * 1.2
+	local Pitch2 = Pitch1 * 0.8
 	
 	local boost = math.Clamp( (self.SmoothBlower / 600) ^ 4 ,0,1)
 	
-	self.Blower:ChangeVolume( Volume1 )
+	self.Blower:ChangeVolume( Volume1*0.5 )
 	self.Blower:ChangePitch( Pitch1 )
+	self.Blower:SetSoundLevel( 70 )
 	
-	self.BlowerWhine:ChangeVolume( Volume2 )
+	self.BlowerWhine:ChangeVolume( Volume2*0.5 )
 	self.BlowerWhine:ChangePitch( Pitch2 )
+	self.BlowerWhine:SetSoundLevel( 75 )
 	
 	return boost
 end

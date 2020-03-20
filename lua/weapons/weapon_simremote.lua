@@ -138,17 +138,13 @@ function SWEP:Enable()
 		if IsValid( car:GetDriver() ) then
 			ply:ChatPrint("vehicle is already in use")
 		else
-			if car.VehicleLocked then
-				ply:ChatPrint("vehicle is locked")
-			else
-				self:SetActive( true )
-				self.OldMoveType = ply:GetMoveType()
-				
-				ply:SetMoveType( MOVETYPE_NONE )
-				ply:DrawViewModel( false )
-				
-				car.RemoteDriver = ply
-			end
+			self:SetActive( true )
+			self.OldMoveType = ply:GetMoveType()
+			
+			ply:SetMoveType( MOVETYPE_NONE )
+			ply:DrawViewModel( false )
+			
+			car.RemoteDriver = ply
 		end
 	end
 end

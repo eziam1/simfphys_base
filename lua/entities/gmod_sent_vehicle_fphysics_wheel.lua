@@ -73,13 +73,29 @@ if SERVER then
 			simfphys.SetOwner( self.EntityOwner, self.WheelSplash )
 		end)
 		
-		self.snd_roll = "simulated_vehicles/sfx/concrete_roll.wav"
-		self.snd_roll_dirt = "simulated_vehicles/sfx/dirt_roll.wav"
-		self.snd_roll_grass = "simulated_vehicles/sfx/grass_roll.wav"
+		timer.Simple(0.02,function()
+		self.snd_roll_dirt = "eziam/raceattack/surface_dirt-0"..self:GetBaseEnt().wheelnum..".wav"
+		self.snd_roll_grass = "eziam/raceattack/surface_grass-0"..self:GetBaseEnt().wheelnum..".wav"
 		
-		self.snd_skid = "simulated_vehicles/sfx/concrete_skid.wav"
-		self.snd_skid_dirt = "simulated_vehicles/sfx/dirt_skid.wav"
-		self.snd_skid_grass = "simulated_vehicles/sfx/grass_skid.wav"
+		//if SW.GetCurrentWeather().ID == "rain" then
+			//self.snd_roll = "simulated_vehicles/sfx/concrete_roll_wet.wav"
+			//self.snd_skid = "simulated_vehicles/sfx/concrete_skid_wet.wav"
+		//else
+			self.snd_roll = "eziam/raceattack/surface_asphalt-0"..self:GetBaseEnt().wheelnum..".wav"
+			self.snd_skid = "eziam/raceattack/skid_asphalt-0"..self:GetBaseEnt().wheelnum..".wav"
+		//end
+		self.snd_skid_dirt = "eziam/raceattack/skid_dirt-0"..self:GetBaseEnt().wheelnum..".wav"
+		self.snd_skid_grass = "eziam/raceattack/skid_grass-0"..self:GetBaseEnt().wheelnum..".wav"
+		if(self:GetBaseEnt().InvisWheels) then
+			self.snd_roll_dirt = "common/null.wav"
+			self.snd_roll_grass = "common/null.wav"
+			self.snd_roll = "common/null.wav"
+			self.snd_skid = "common/null.wav"
+			self.snd_skid_dirt = "common/null.wav"
+			self.snd_skid_grass = "common/null.wav"
+			self.snd_skid = "common/null.wav"
+			self.snd_skid = "common/null.wav"
+		end
 		
 		self.RollSound = CreateSound(self, self.snd_roll)
 		self.RollSound_Dirt = CreateSound(self, self.snd_roll_dirt)
@@ -88,18 +104,14 @@ if SERVER then
 		self.Skid = CreateSound(self, self.snd_skid)
 		self.Skid_Dirt = CreateSound(self, self.snd_skid_dirt)
 		self.Skid_Grass = CreateSound(self, self.snd_skid_grass)
+		self:GetBaseEnt().wheelnum = self:GetBaseEnt().wheelnum + 1
+		end)
 	end
 	
 	function ENT:Use( ply )
 		local base = self:GetBaseEnt()
 		if not IsValid( base ) then return end
-
-		if base:GetIsVehicleLocked() or base:HasPassengerEnemyTeam( ply ) then 
-			base:EmitSound( "doors/default_locked.wav" )
-
-			return
-		end
-
+		
 		base:SetPassenger( ply )
 	end
 
@@ -147,9 +159,10 @@ if SERVER then
 		local SkidSound = math.Clamp( self:GetSkidSound(),0,255)
 		local Speed = self:GetVelocity():Length()
 		local WheelOnGround = self:GetOnGround()
-		local EnableDust = (Speed * WheelOnGround > 200)	
+		local EnableDust = (Speed * WheelOnGround > 200) and not self:GetBaseEnt().InvisWheels		
 		local Material = self:GetSurfaceMaterial()
 		local GripLoss = self:GetGripLoss()
+		
 		
 		if EnableDust ~= self.OldVar then
 			self.OldVar = EnableDust
@@ -231,7 +244,7 @@ if SERVER then
 		local SkidSound = math.Clamp( self:GetSkidSound(),0,255)
 		local Speed = self:GetVelocity():Length()
 		local WheelOnGround = self:GetOnGround()
-		local EnableDust = (Speed * WheelOnGround > 200)	
+		local EnableDust = (Speed * WheelOnGround > 200) and not self:GetBaseEnt().InvisWheels		
 		local Material = self:GetSurfaceMaterial()
 		local GripLoss = self:GetGripLoss()
 		
@@ -319,13 +332,13 @@ if SERVER then
 			end
 			
 			if Material == "grass" then
-				self.RollSound_Grass:ChangeVolume(math.Clamp((ForwardSpeed - 100) / 1600,0,1), 0) 
+				self.RollSound_Grass:ChangeVolume(math.Clamp((ForwardSpeed - 100) / 1600,0,1)*0.6, 0) 
 				self.RollSound_Grass:ChangePitch(80 + math.Clamp((ForwardSpeed - 100) / 250,0,255), 0) 
 			elseif Material == "dirt" or Material == "sand" then
-				self.RollSound_Dirt:ChangeVolume(math.Clamp((ForwardSpeed - 100) / 1600,0,1), 0) 
+				self.RollSound_Dirt:ChangeVolume(math.Clamp((ForwardSpeed - 100) / 800,0,1), 0) 
 				self.RollSound_Dirt:ChangePitch(80 + math.Clamp((ForwardSpeed - 100) / 250,0,255), 0) 
 			else
-				self.RollSound:ChangeVolume(math.Clamp((ForwardSpeed - 100) / 1500,0,1), 0) 
+				self.RollSound:ChangeVolume(math.Clamp((ForwardSpeed - 100) / 1500,0,1)*0.6, 0) 
 				self.RollSound:ChangePitch(100 + math.Clamp((ForwardSpeed - 400) / 200,0,255), 0) 
 			end
 		end
@@ -388,14 +401,14 @@ if SERVER then
 			end
 			
 			if Material == "grass" or Material == "snow" then
-				self.Skid_Grass:ChangeVolume( math.Clamp(SkidSound,0,1) ) 
+				self.Skid_Grass:ChangeVolume( math.Clamp(SkidSound,0,1)*0.75 ) 
 				self.Skid_Grass:ChangePitch(math.min(90 + (SkidSound * Speed / 500),150)) 
 			elseif Material == "dirt" or Material == "sand" then
-				self.Skid_Dirt:ChangeVolume( math.Clamp(SkidSound,0,1) * 0.8) 
+				self.Skid_Dirt:ChangeVolume( math.Clamp(SkidSound,0,1) * 0.75) 
 				self.Skid_Dirt:ChangePitch(math.min(120 + (SkidSound * Speed / 500),150)) 
 			else
-				self.Skid:ChangeVolume( math.Clamp(SkidSound * 0.5,0,1) ) 
-				self.Skid:ChangePitch(math.min(85 + (SkidSound * Speed / 800) + GripLoss * 22,150)) 
+				self.Skid:ChangeVolume( math.Clamp(SkidSound * 0.5,0,1)*0.75 ) 
+				self.Skid:ChangePitch(math.min(100 + (SkidSound * Speed / 800) + GripLoss * 22,175)) 
 			end
 		end
 	end
@@ -418,10 +431,10 @@ if SERVER then
 	end
 
 	function ENT:PhysicsCollide( data, physobj )
-		if data.Speed > 100 and data.DeltaTime > 0.2 then
+		if data.Speed > 100 and data.DeltaTime > 0.2 and not self:GetBaseEnt().InvisWheels then
 			if data.Speed > 400 then 
 				self:EmitSound( "Rubber_Tire.ImpactHard" )
-				self:EmitSound( "simulated_vehicles/suspension_creak_".. math.random(1,6) ..".ogg" )
+				self:EmitSound( "eziam/raceattack/suspension-0".. math.random(1,9) ..".ogg" )
 			else 
 				self:EmitSound( "Rubber.ImpactSoft" )
 			end
@@ -535,13 +548,15 @@ if CLIENT then
 	function ENT:ManageSmoke()
 		local BaseEnt = self:GetBaseEnt()
 		if not IsValid( BaseEnt ) then return end
+		if(GetConVar("pga_disable_tire_particles"):GetInt() != 0) then return end
+		if(BaseEnt:GetNWBool("inviswheels")) then return end
 		
 		local WheelOnGround = self:GetOnGround()
 		local GripLoss = self:GetGripLoss()
 		local Material = self:GetSurfaceMaterial()
 		
-		if WheelOnGround > 0 and (Material == "concrete" or Material == "rock" or Material == "tile") and GripLoss > 0 then
-			self.FadeHeat = math.Clamp( self.FadeHeat + GripLoss * 0.06,0,10)
+		if WheelOnGround > 0 and (Material == "default" or Material == "brick" or Material == "concrete" or Material == "rock" or Material == "tile" or Material == "metal" or Material == "wood" or Material == "glass") and GripLoss > 0 then
+			self.FadeHeat = math.Clamp( self.FadeHeat + GripLoss * 0.25,0,10)
 		else
 			self.FadeHeat = self.FadeHeat * 0.995
 		end
@@ -549,9 +564,20 @@ if CLIENT then
 		local Scale = self.FadeHeat ^ 3 / 1000
 		local SmokeOn = (self.FadeHeat >= 7)
 		local DirtOn = GripLoss > 0.05
-		local lcolor = BaseEnt:GetTireSmokeColor() * 255
+		local lcolor = (BaseEnt:GetTireSmokeColor() or Vector(1,1,1)) * 255
 		local Speed = self:GetVelocity():Length()
 		local OnRim = self:GetDamaged()
+		local hsv = Color(255,0,0)
+		BaseEnt.RainbowColor = BaseEnt.RainbowColor or 0
+
+		if(IsValid(BaseEnt:GetDriver()) && BaseEnt:GetDriver():PS_HasItemEquipped("rainbowsmoke")) then
+			if BaseEnt.RainbowColor >= 360 then
+				BaseEnt.RainbowColor = 0
+			end
+			BaseEnt.RainbowColor = BaseEnt.RainbowColor + 0.75
+			hsv = HSVToColor(BaseEnt.RainbowColor % 360, 1, 1)
+			lcolor = Color(hsv.r,hsv.g,hsv.b)
+		end
 		
 		local Forward = self:GetForward()
 		local Dir = (BaseEnt:GetGear() < 2) and Forward or -Forward

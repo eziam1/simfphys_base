@@ -5,6 +5,7 @@ function ENT:Initialize()
 	self:SetNotSolid( true )
 	self:SetUseType( SIMPLE_USE )
 	self:SetRenderMode( RENDERMODE_TRANSALPHA )
+	self:SetCustomCollisionCheck(true)
 	
 	local PObj = self:GetPhysicsObject()
 	if not IsValid( PObj ) then print("[SIMFPHYS] ERROR COULDN'T INITIALIZE VEHICLE! '"..self:GetModel().."' has no physics model!") return end
@@ -148,7 +149,6 @@ function ENT:InitializeVehicle()
 	self.DriverSeat:Spawn()
 	self.DriverSeat:Activate()
 	self.DriverSeat:SetPos( View.ViewPos + self.DriverSeat:GetUp() * (-34 + self.SeatOffset.z) + self.DriverSeat:GetRight() * (self.SeatOffset.y) + self.DriverSeat:GetForward() * (-6 + self.SeatOffset.x) )
-	self.DriverSeat:SetNWInt( "pPodIndex", 1 )
 	
 	if View.ID ~= false then
 		self:SetupEnteringAnims()
@@ -166,9 +166,7 @@ function ENT:InitializeVehicle()
 	self:DeleteOnRemove( self.DriverSeat )
 	self:SetDriverSeat( self.DriverSeat )
 	self.DriverSeat:SetNotSolid( true )
-	--self.DriverSeat:SetNoDraw( true )
-	self.DriverSeat:SetColor( Color( 255, 255, 255, 0 ) ) 
-	self.DriverSeat:SetRenderMode( RENDERMODE_TRANSALPHA )
+	self.DriverSeat:SetNoDraw( true )
 	self.DriverSeat:DrawShadow( false )
 	simfphys.SetOwner( self.EntityOwner, self.DriverSeat )
 	
@@ -184,10 +182,7 @@ function ENT:InitializeVehicle()
 			self.pSeat[i]:Spawn()
 			self.pSeat[i]:Activate()
 			self.pSeat[i]:SetNotSolid( true )
-			--self.pSeat[i]:SetNoDraw( true )
-			self.pSeat[i]:SetColor( Color( 255, 255, 255, 0 ) ) 
-			self.pSeat[i]:SetRenderMode( RENDERMODE_TRANSALPHA )
-			
+			self.pSeat[i]:SetNoDraw( true )
 			self.pSeat[i].fphysSeat = true
 			self.pSeat[i].base = self
 			self.pSeat[i].DoNotDuplicate = true
@@ -201,10 +196,6 @@ function ENT:InitializeVehicle()
 			self:DeleteOnRemove( self.pSeat[i] )
 			
 			self.pSeat[i]:SetParent( self )
-			
-			self.pPodKeyIndex = self.pPodKeyIndex and self.pPodKeyIndex + 1 or 2
-	
-			self.pSeat[i]:SetNWInt( "pPodIndex", self.pPodKeyIndex )
 		end
 	end
 	
@@ -252,7 +243,13 @@ function ENT:InitializeVehicle()
 			self:DeleteOnRemove( prop )
 		end
 	end
-	
+	self.shiftduration = 0.25
+	local vehiclelist = list.Get( "simfphys_vehicles" )[self:GetSpawn_List()] or false
+	if(vehiclelist) then
+		local shifter = vehiclelist.Members.snd_shifter or "shiftsmall"
+		self.ShiftSound = shifter
+	end
+	self.wheelnum = 1
 	self:GetVehicleData()
 end
 
@@ -401,10 +398,7 @@ function ENT:WriteVehicleDataTable()
 		self.Blower = CreateSound(self, "")
 		self.BlowerWhine = CreateSound(self, "")
 		self.BlowOff = CreateSound(self, "")
-
-		local Health = math.floor(self.MaxHealth and self.MaxHealth or (1000 + self:GetPhysicsObject():GetMass() / 3))
-		self:SetMaxHealth( Health )
-		self:SetCurHealth( Health )
+		self.Scrape = CreateSound(self, "")
 		
 		self:SetFastSteerAngle(self.FastSteeringAngle / self.VehicleData["steerangle"])
 		self:SetNotSolid( false )
@@ -635,6 +629,9 @@ function ENT:CreateWheel(index, name, attachmentpos, height, radius, swap_y , po
 		self.GhostWheels[index]:SetNotSolid( true )
 		self.GhostWheels[index].DoNotDuplicate = true
 		self.GhostWheels[index]:SetParent( self.name )
+		if(self.InvisWheels) then
+			self.GhostWheels[index]:SetNoDraw(true)
+		end
 		self:DeleteOnRemove( self.GhostWheels[index] )
 		simfphys.SetOwner( self.EntityOwner, self.GhostWheels[index] )
 		

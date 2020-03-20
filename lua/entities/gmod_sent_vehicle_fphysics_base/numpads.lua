@@ -112,7 +112,7 @@ numpad.Register( "k_clutch", function( pl, ent, keydown )
 	end
 end )
 numpad.Register( "k_hbrk", function( pl, ent, keydown )
-	if not IsValid(pl) or not IsValid(ent) then return false end
+	/*if not IsValid(pl) or not IsValid(ent) then return false end
 	
 	if ent.PressedKeys then
 		ent.PressedKeys["Space"] = keydown
@@ -120,7 +120,7 @@ numpad.Register( "k_hbrk", function( pl, ent, keydown )
 	
 	if keydown and ent:GetIsCruiseModeOn() then
 		ent:SetIsCruiseModeOn( false )
-	end
+	end*/
 end )
 
 numpad.Register( "k_ccon", function( pl, ent, keydown )
@@ -220,7 +220,7 @@ numpad.Register( "k_eng", function( pl, ent, keydown )
 	
 	if keydown then
 		if ent:EngineActive() then
-			ent:StopEngine()
+			//ent:StopEngine()
 		else
 			ent:StartEngine( true )
 		end
@@ -231,10 +231,12 @@ numpad.Register( "k_lock", function( pl, ent, keydown )
 	if not IsValid(pl) or not IsValid(ent) then return false end
 	
 	if keydown then
-		if ent:GetIsVehicleLocked() then
-			ent:UnLock()
+		if ent.VehicleLocked then
+			ent.VehicleLocked = false
+			ent:EmitSound( "doors/latchunlocked1.wav" )
 		else
-			ent:Lock()
+			ent.VehicleLocked = true
+			ent:EmitSound( "doors/latchlocked2.wav" )
 		end
 	end
 end )
